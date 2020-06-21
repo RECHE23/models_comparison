@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import os.path
+from IPython.display import Video
+
 # Import Numpy:
 import numpy as np
 np.random.seed(42)
@@ -25,10 +28,12 @@ import matplotlib
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as PathEffects
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 matplotlib.rcParams['figure.figsize'] = (10.0, 8.0)
 matplotlib.rcParams['animation.html'] = 'html5'
 matplotlib.rcParams["animation.writer"] = 'imagemagick'
+if os.path.isfile('/usr/bin/ffmpeg'):
+    matplotlib.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'
 norm = cm.colors.Normalize(vmin=-1.0, vmax=1.0)
 plt.tight_layout()
 
@@ -110,8 +115,8 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
 
         # Plot the points:
         def plot_points(ax, X, y):
-            plt.scatter(X[:, 0], X[:, 1], s=40,
-                        c=y.flatten(), edgecolors='k', alpha=0.75)
+            plt.scatter(X.cpu()[:, 0], X.cpu()[:, 1], s=40,
+                        c=y.flatten().cpu(), edgecolors='k', alpha=0.75)
             ax.set_xlim(xx.min(), xx.max())
             ax.set_ylim(yy.min(), yy.max())
             ax.set_xticks(())
@@ -123,8 +128,8 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
             X, y = ds.X, ds.y
 
             # Creates a mesh grid from the characteristics space:
-            x_span = np.linspace(min(X[:, 0]), max(X[:, 0]))
-            y_span = np.linspace(min(X[:, 1]), max(X[:, 1]))
+            x_span = np.linspace(min(X.cpu()[:, 0]), max(X.cpu()[:, 0]))
+            y_span = np.linspace(min(X.cpu()[:, 1]), max(X.cpu()[:, 1]))
             xx, yy = np.meshgrid(x_span, y_span)
             grid = torch.Tensor(np.c_[xx.ravel(), yy.ravel()])
 
@@ -155,8 +160,8 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
                     loss = criterion(y_pred, y)
 
                 # Plot the decision boundary:
-                pred_func = model.forward(grid)
-                z = pred_func.view(xx.shape).detach().numpy()
+                pred_func = model.forward(grid.to(device))
+                z = pred_func.cpu().view(xx.shape).detach().numpy()
 
                 # Put the result into a color plot:
                 ax.contourf(xx, yy, z, zorder=0, vmin=-1.0, vmax=1.0,
@@ -198,10 +203,10 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
         for ds_index, ds in enumerate(datasets):
             train_loader = DataLoader(ds, batch_size=batch_size, shuffle=shuffle)
             for X_batch, y_batch in train_loader:
-                X_batch = X_batch.to(device)
-                y_batch = y_batch.to(device)
                 # Iterate over models:
                 for model_name, model in models[ds_index].items():
+                    model.to(device)
+                    model.train()
                     def closure():
                         # Do a forward pass:
                         y_pred = model.forward(X_batch)
@@ -229,30 +234,15 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
         if i == epochs:
             print()
             print(u'\x1b[?25l', end='')
-            print("Generating the animated gif... Please wait!", end=u"\r")
+            print("Generating the animation... Please wait!", end=u"\r")
 
     fig = plt.figure(figsize=(32, 18), dpi=80)  # WQHD Resolution: 2560 x 1440
     anim = FuncAnimation(fig, update, frames=(epochs + 1), interval=1)
-    anim.save(f'{filename}.gif', dpi=80, writer='imagemagick')
+    anim.save(f'{filename}.mp4', dpi=80, fps=10, writer='ffmpeg')
     print(u'\r' + ' ' * 90, end=u'\r')
     print(u'\x1b[?25h', end='')
-
-
-def convert_to_video(filename, overwrite=True, options=None):
-    if options is None:
-        options = {'movflags': 'faststart', 'pix_fmt': 'yuv420p'}
-    stream = ffmpeg.input(f'{filename}.gif')
-    stream = ffmpeg.output(stream, f'{filename}.mp4', **options)
-    ffmpeg.run(stream, overwrite_output=overwrite)
-
-
-def compress_gif(filename, scale=1.0):
-    import subprocess
-    subprocess.call(["gifsicle", "--verbose", f'{filename}.gif',
-                     "--colors", "64",
-                     "--scale", f"{scale}",
-                     "--output", f'{filename}_compressed.gif',
-                     "-O3"])
+    plt.close()
+    return Video(f'./{filename}.mp4', embed=True, width=960, height=540, html_attributes="loop autoplay")
 
 
 def display_progress_bar(iteration, total, prefix='', suffix='', decimals=1,
