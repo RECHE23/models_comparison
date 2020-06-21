@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os.path
+import inspect
 from IPython.display import Video
 
 # Import Numpy:
@@ -242,7 +243,10 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
     print(u'\r' + ' ' * 90, end=u'\r')
     print(u'\x1b[?25h', end='')
     plt.close()
-    return Video(f'./{filename}.mp4', embed=True, width=960, height=540, html_attributes="loop autoplay")
+    if 'html_attributes' in dict(inspect.signature(Video).parameters):
+        return Video(f'./{filename}.mp4', embed=True, width=960, height=540, html_attributes="loop autoplay")
+    else:
+        return Video(f'./{filename}.mp4', embed=True, width=960, height=540)
 
 
 def display_progress_bar(iteration, total, prefix='', suffix='', decimals=1,
