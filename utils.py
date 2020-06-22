@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
-
 import os.path
 import inspect
 from IPython.display import Video
-
-# Import Numpy:
 import numpy as np
-np.random.seed(42)
-
-# Import PyTorch:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+import matplotlib
+from matplotlib import cm
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as patheffects
+from matplotlib.animation import FuncAnimation
+import warnings
+import sklearn.datasets
+
+# Set random seed for reproducibility:
+np.random.seed(42)
 torch.manual_seed(42)
 
 # Setting the device to use:
@@ -24,12 +28,7 @@ if torch.cuda.is_available():
 else:
     print("Running on CPU")
 
-# Import MatPlotLib:
-import matplotlib
-from matplotlib import cm
-import matplotlib.pyplot as plt
-import matplotlib.patheffects as PathEffects
-from matplotlib.animation import FuncAnimation, FFMpegWriter
+# MatPlotLib settings:
 matplotlib.rcParams['figure.figsize'] = (10.0, 8.0)
 matplotlib.rcParams['animation.html'] = 'html5'
 matplotlib.rcParams["animation.writer"] = 'imagemagick'
@@ -39,76 +38,16 @@ norm = cm.colors.Normalize(vmin=-1.0, vmax=1.0)
 plt.tight_layout()
 
 # Suppress useless warnings:
-import warnings
 warnings.filterwarnings("ignore")
-
-# Import SKLearn datasets:
-import sklearn.datasets
-
-# Import ffmpeg-python:
-import ffmpeg
 
 
 # Define the accuracy function:
-def accuracy(y_pred, y):
-    pred_y_copy = y_pred.clone()
-    pred_y_copy[pred_y_copy < 0] = -1
-    pred_y_copy[pred_y_copy >= 0] = 1
-    acc_pred = (pred_y_copy == y).float().sum() / y.shape[0]
-    return acc_pred * 100
-
-
-# Define the Hinge loss function:
-def hinge_loss(input, target, reduction='mean'):
-    if not (target.size() == input.size()):
-        warnings.warn("Using a target size ({}) that is different to the input size ({}). "
-                      "This will likely lead to incorrect results due to broadcasting. "
-                      "Please ensure they have the same size.".format(target.size(),
-                                                                      input.size()),
-                      stacklevel=2)
-    ret = 1 - input * target
-    ret[ret < 0] = 0
-    if reduction != 'none':
-        ret = torch.mean(ret) if reduction == 'mean' else torch.sum(ret)
-    return ret
-
-
-# Define the Hinge loss Module:
-class HingeLoss(nn.Module):
-    __constants__ = ['reduction']
-
-    def __init__(self, reduction: str = 'mean') -> None:
-        self.reduction = reduction
-        super(HingeLoss, self).__init__()
-
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return hinge_loss(input, target, reduction=self.reduction)
-
-
-# Define the Linear loss function:
-def linear_loss(input, target, reduction='mean'):
-    if not (target.size() == input.size()):
-        warnings.warn("Using a target size ({}) that is different to the input size ({}). "
-                      "This will likely lead to incorrect results due to broadcasting. "
-                      "Please ensure they have the same size.".format(target.size(),
-                                                                      input.size()),
-                      stacklevel=2)
-    ret = (1 - input * target) / 2
-    if reduction != 'none':
-        ret = torch.mean(ret) if reduction == 'mean' else torch.sum(ret)
-    return ret
-
-
-# Define the Hinge loss Module:
-class LinearLoss(nn.Module):
-    __constants__ = ['reduction']
-
-    def __init__(self, reduction: str = 'mean') -> None:
-        self.reduction = reduction
-        super(LinearLoss, self).__init__()
-
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return linear_loss(input, target, reduction=self.reduction)
+def accuracy(input, target, percent=True):
+    prediction = torch.sign(input)
+    acc = (prediction == target).float().sum() / target.shape[0]
+    if percent:
+        return acc * 100
+    return acc
 
 
 # Custom Dataset class:
@@ -123,12 +62,32 @@ class MyDataset(Dataset):
         return [self.X[index], self.y[index]]
 
 
+# Convert Numpy dataset to PyTorch dataset:
 def convert_to_pytorch_dataset(X, y):
     X_tensor = torch.from_numpy(X).float()
     y_tensor = torch.from_numpy(y.reshape(-1, 1)).float()
     X_tensor = X_tensor.to(device)
     y_tensor = y_tensor.to(device)
     return MyDataset((X_tensor, y_tensor))
+
+
+# Plot the points:
+def plot_points(ax, X, y, xx, yy):
+    plt.scatter(X.cpu()[:, 0], X.cpu()[:, 1], s=40,
+                c=y.flatten().cpu(), edgecolors='k', alpha=0.75)
+    ax.set_xlim(xx.min(), xx.max())
+    ax.set_ylim(yy.min(), yy.max())
+    ax.set_xticks(())
+    ax.set_yticks(())
+
+
+# Creates a mesh grid from the characteristics space:
+def make_grid(X):
+    x_span = np.linspace(min(X.cpu()[:, 0]), max(X.cpu()[:, 0]))
+    y_span = np.linspace(min(X.cpu()[:, 1]), max(X.cpu()[:, 1]))
+    xx, yy = np.meshgrid(x_span, y_span)
+    grid = torch.Tensor(np.c_[xx.ravel(), yy.ravel()])
+    return grid, xx, yy
 
 
 # Define the function that generates the animated gif:
@@ -141,25 +100,11 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
         h = .02  # Step size in the mesh.
         i = 1
 
-        # Plot the points:
-        def plot_points(ax, X, y):
-            plt.scatter(X.cpu()[:, 0], X.cpu()[:, 1], s=40,
-                        c=y.flatten().cpu(), edgecolors='k', alpha=0.75)
-            ax.set_xlim(xx.min(), xx.max())
-            ax.set_ylim(yy.min(), yy.max())
-            ax.set_xticks(())
-            ax.set_yticks(())
-
         # Iterate over datasets:
         for ds_index, ds in enumerate(datasets):
             # Separates the characteristics from the labels:
             X, y = ds.X, ds.y
-
-            # Creates a mesh grid from the characteristics space:
-            x_span = np.linspace(min(X.cpu()[:, 0]), max(X.cpu()[:, 0]))
-            y_span = np.linspace(min(X.cpu()[:, 1]), max(X.cpu()[:, 1]))
-            xx, yy = np.meshgrid(x_span, y_span)
-            grid = torch.Tensor(np.c_[xx.ravel(), yy.ravel()])
+            grid, xx, yy = make_grid(X)
 
             # Initialize the subplot:
             ax = fig.add_subplot(len(datasets), len(models[ds_index]) + 1, i)
@@ -170,7 +115,7 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
                                                      'fontweight': 'medium'})
 
             # Plot the points:
-            plot_points(ax, X, y)
+            plot_points(ax, X, y, xx, yy)
             i += 1
 
             # Iterate over models:
@@ -197,7 +142,7 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
                 plt.contour(xx, yy, z, levels=[-.0001, 0.0001], colors='r')
 
                 # Plot the points:
-                plot_points(ax, X, y)
+                plot_points(ax, X, y, xx, yy)
 
                 # Adds a title:
                 if ds_index == 0:
@@ -216,9 +161,9 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
                                fontsize=14, color='w', weight='bold',
                                transform=ax.transAxes)
                 txt1.set_path_effects(
-                    [PathEffects.withStroke(linewidth=1, foreground='k')])
+                    [patheffects.withStroke(linewidth=1, foreground='k')])
                 txt2.set_path_effects(
-                    [PathEffects.withStroke(linewidth=1, foreground='k')])
+                    [patheffects.withStroke(linewidth=1, foreground='k')])
                 i += 1
 
     # Define the update function:
@@ -235,6 +180,7 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
                 for model_name, model in models[ds_index].items():
                     model.to(device)
                     model.train()
+
                     def closure():
                         # Do a forward pass:
                         y_pred = model.forward(X_batch)
@@ -271,7 +217,8 @@ def generate_animated_plot(epochs=400, datasets=None, models=None,
     print(u'\x1b[?25h', end='')
     plt.close()
     if 'html_attributes' in dict(inspect.signature(Video).parameters):
-        return Video(f'./{filename}.mp4', embed=True, width=960, height=540, html_attributes="loop autoplay")
+        return Video(f'./{filename}.mp4', embed=True, width=960, height=540,
+                     html_attributes="loop autoplay")
     else:
         return Video(f'./{filename}.mp4', embed=True, width=960, height=540)
 
