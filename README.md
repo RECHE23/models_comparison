@@ -33,7 +33,11 @@ For simplicity reasons, these experiments are done on simple neural network clas
 
 Unless specified, the neural networks are composed of four layers (two hidden layers) with 32 neurons per layer and uses the [stochastic gradient descent optimizer](https://pytorch.org/docs/stable/optim.html#torch.optim.SGD) with a [learning rate](https://en.wikipedia.org/wiki/Learning_rate) of 0.01, a [momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum) of 0.9, [weight decay](https://en.wikipedia.org/wiki/Regularization_(mathematics)#Tikhonov_regularization) at 0.001. The default [loss function](https://en.wikipedia.org/wiki/Loss_functions_for_classification) is the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error).
 
-The default sampling method is by shuffled batches of 32 samples.
+The sampling methods used by default are:
+- sequential learning over the whole dataset (gradient is calculated after feeding the whole dataset in the same sequential order)
+- Shuffled batches of 32 samples
+
+<br />
 
 | :warning: CAUTION!      |
 | :--------------------------- |
@@ -42,7 +46,8 @@ The default sampling method is by shuffled batches of 32 samples.
 ---
 
 ### TO DO:
-- [x] Add the option to learn by various sampling methods (~~sequential~~, ~~batches~~, bootstrapping, ~~shuffling~~, etc).
+- [ ] Explore alternative learning methods.
+- [ ] Use one frame per retropopagation instead of one frame per epoch, for smoother animations.
 - [ ] Implement [dimensionality reduction](https://en.wikipedia.org/wiki/Dimensionality_reduction) (like [PCA](https://en.wikipedia.org/wiki/Principal_component_analysis), [UMAP](https://en.wikipedia.org/wiki/Nonlinear_dimensionality_reduction#Uniform_manifold_approximation_and_projection) or [tSNE](https://en.wikipedia.org/wiki/T-distributed_stochastic_neighbor_embedding)) to analyze higher dimensions datasets.
 - [ ] Display more information about the setup: loss function, architecture, optimizer.
 - [ ] Display more information about the learning: learning curve, weights & biases, metrics, etc.
