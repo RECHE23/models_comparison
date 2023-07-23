@@ -1,5 +1,5 @@
 matplotlib==3.1.2
-torch==1.5.0
+torch==1.13.1
 numpy==1.18.1
 scikit-learn~=0.23.1
 ipython~=7.1.1
